@@ -7,7 +7,8 @@
 3. Cursor Agent SDK scans the code  
 4. App shows a report: score, critical issues, quick wins, fix plan  
 
-**Full working app:** branch `integration` (SDK + backend + UI). Setup: [docs/INTEGRATION.md](docs/INTEGRATION.md).
+**Full working app:** `main` now includes SDK + backend + UI (merged from `integration`).  
+For extra team instructions, see [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 ---
 
@@ -19,7 +20,7 @@ shipcheck/
 ├── apps/api/                 # Backend (Express)
 │   └── src/
 │       ├── routes/audit.ts   # POST /api/audit
-│       └── lib/cursor-audit.ts   # Cursor SDK (stub — AI teammate)
+│       └── lib/cursor-audit.ts   # Cursor Agent SDK audit logic
 ├── packages/shared/          # Shared types (AuditReport, etc.)
 ├── .env.example
 └── package.json              # npm workspaces
@@ -61,6 +62,16 @@ Command Palette → **TypeScript: Select TypeScript Version** → **Use Workspac
 
 ---
 
+## Hackathon team owners
+
+| Name | Branch | Role |
+|------|--------|------|
+| **Behailu** | `frontend-ui` | UI dashboard, report presentation |
+| **Nahom** | `backend-api` | Repo clone + `POST /api/audit` |
+| **Natenael** | `cursor-agent-sdk` | Cursor SDK audit prompt + parsing |
+
+---
+
 ## Git workflow (important)
 
 1. Base project is on **`main`** — do not push your feature work directly to `main`.  
@@ -82,11 +93,11 @@ git push -u origin YOUR-BRANCH-NAME
 
 ## Team roles — pick ONE branch
 
-| You are | Branch name | Main folders |
-|---------|-------------|--------------|
-| **Frontend** | `frontend-ui` | `apps/web/src/` |
-| **Backend** | `backend-api` | `apps/api/src/routes/`, clone logic |
-| **AI / Cursor SDK** | `cursor-agent-sdk` | `apps/api/src/lib/cursor-audit.ts` |
+| You are | Branch name | Owner | Main folders |
+|---------|-------------|-------|--------------|
+| **Frontend** | `frontend-ui` | Behailu | `apps/web/src/` |
+| **Backend** | `backend-api` | Nahom | `apps/api/src/routes/`, clone logic |
+| **AI / Cursor SDK** | `cursor-agent-sdk` | Natenael | `apps/api/src/lib/cursor-audit.ts` |
 
 ```bash
 # Example for frontend person:
@@ -208,7 +219,15 @@ Everyone must return this shape from the API:
 AuditReport {
   repoUrl: string
   score: number          // 0–100
+  verdict: "ready" | "needs-work" | "not-ready"
   summary: string
+  repo: {
+    whatItDoes: string
+    projectType: string
+    primaryLanguage: string
+    frameworks: string[]
+    keyFiles: string[]
+  }
   criticalIssues: AuditIssue[]
   quickWins: AuditIssue[]
   fixPlan: FixPlanStep[]
@@ -263,13 +282,15 @@ Content-Type: application/json
 
 ---
 
-## Merge order (suggested)
+## Merge workflow (now)
 
-1. **backend-api** — clone + route plumbing  
-2. **cursor-agent-sdk** — real audit in `runCursorAudit`  
-3. **frontend-ui** — polish UI against real data  
+Core work is already merged to `main`. For new work:
 
-If branches conflict, **rebase on `main`** after each merge:
+1. Branch from latest `main`
+2. Implement in your owned area
+3. Open PR to `main`
+
+If branches conflict, rebase on `main`:
 
 ```bash
 git checkout your-branch
