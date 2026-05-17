@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { AuditReport } from "@shipcheck/shared";
+import type { AuditReport, Verdict } from "@shipcheck/shared";
 
 type ScanStep = "idle" | "validating" | "cloning" | "analyzing" | "done";
 type Theme = "dark" | "light";
@@ -17,9 +17,34 @@ const STEP_LABELS: Record<ScanStep, string> = {
 
 const STEP_ORDER: ScanStep[] = ["validating", "cloning", "analyzing"];
 
+const VERDICT_META: Record<Verdict, { label: string; color: string; bg: string; border: string; dot: string }> = {
+  ready: {
+    label: "Production ready",
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/12",
+    border: "border-emerald-500/30",
+    dot: "bg-emerald-400",
+  },
+  "needs-work": {
+    label: "Needs work",
+    color: "text-amber-400",
+    bg: "bg-amber-500/12",
+    border: "border-amber-500/30",
+    dot: "bg-amber-400",
+  },
+  "not-ready": {
+    label: "Not production ready",
+    color: "text-red-400",
+    bg: "bg-red-500/12",
+    border: "border-red-500/30",
+    dot: "bg-red-400",
+  },
+};
+
 // ── Severity badge helper ──────────────────────────────────────────────────────
 function severityColor(severity?: string) {
   switch (severity?.toLowerCase()) {
+    case "critical":
     case "high":
       return {
         bg: "bg-red-500/15",
@@ -27,6 +52,7 @@ function severityColor(severity?: string) {
         text: "text-red-400",
         dot: "bg-red-400",
       };
+    case "warning":
     case "medium":
       return {
         bg: "bg-amber-500/15",
@@ -121,7 +147,7 @@ function IssueCard({
         {item.description}
       </p>
 
-      {item.filePath && (
+      {item.file && (
         <div className={`mt-3 pt-3 border-t ${isDark ? "border-white/10" : "border-orange-100"}`}>
           <code
             className={`rounded-lg px-2 py-1 text-[10px] font-mono ${
@@ -130,7 +156,7 @@ function IssueCard({
                 : "bg-amber-50 text-amber-600 border border-amber-200/60"
             }`}
           >
-            {item.filePath}
+            {item.file}
           </code>
         </div>
       )}
@@ -187,6 +213,137 @@ function ReportBlock({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Repo Overview Card ────────────────────────────────────────────────────────
+function RepoOverviewCard({ report, theme }: { report: AuditReport; theme: Theme }) {
+  const isDark = theme === "dark";
+  const verdict = VERDICT_META[report.verdict] ?? VERDICT_META["needs-work"];
+  const repo = report.repo;
+
+  const repoSlug = (() => {
+    try {
+      const u = new URL(report.repoUrl);
+      return u.pathname.replace(/^\/+|\/+$/g, "");
+    } catch {
+      return report.repoUrl;
+    }
+  })();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45 }}
+      className={`rounded-3xl border p-6 md:p-7 backdrop-blur-xl ${
+        isDark
+          ? "border-white/10 bg-white/5"
+          : "border-orange-200/60 bg-white/70 shadow-sm"
+      }`}
+    >
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <p
+            className={`text-[10px] font-bold uppercase tracking-widest mb-1.5 ${
+              isDark ? "text-amber-400/70" : "text-amber-600/80"
+            }`}
+          >
+            Repository Overview
+          </p>
+          <a
+            href={report.repoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`block truncate text-lg font-bold hover:underline ${
+              isDark ? "text-white" : "text-slate-900"
+            }`}
+            title={report.repoUrl}
+          >
+            {repoSlug}
+          </a>
+          <p className={`mt-2 text-sm leading-relaxed ${isDark ? "text-white/70" : "text-slate-600"}`}>
+            {repo.whatItDoes}
+          </p>
+        </div>
+
+        <div
+          className={`flex-none flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${verdict.bg} ${verdict.border} ${verdict.color}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${verdict.dot} animate-pulse`} />
+          {verdict.label}
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <RepoFact label="Type" value={repo.projectType} theme={theme} />
+        <RepoFact label="Language" value={repo.primaryLanguage} theme={theme} />
+        <RepoFact
+          label="Frameworks"
+          value={repo.frameworks.length ? repo.frameworks.join(", ") : "—"}
+          theme={theme}
+          colSpan="sm:col-span-2"
+        />
+      </div>
+
+      {repo.keyFiles.length > 0 && (
+        <div className="mt-5">
+          <p
+            className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${
+              isDark ? "text-white/40" : "text-slate-500"
+            }`}
+          >
+            Key files
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {repo.keyFiles.map((f) => (
+              <code
+                key={f}
+                className={`rounded-lg px-2 py-1 text-[11px] font-mono ${
+                  isDark
+                    ? "bg-white/5 text-white/70 border border-white/10"
+                    : "bg-orange-50 text-amber-700 border border-orange-200/70"
+                }`}
+              >
+                {f}
+              </code>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function RepoFact({
+  label,
+  value,
+  theme,
+  colSpan,
+}: {
+  label: string;
+  value: string;
+  theme: Theme;
+  colSpan?: string;
+}) {
+  const isDark = theme === "dark";
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2.5 ${colSpan ?? ""} ${
+        isDark ? "border-white/10 bg-white/5" : "border-orange-100 bg-white/80"
+      }`}
+    >
+      <p
+        className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${
+          isDark ? "text-white/40" : "text-slate-500"
+        }`}
+      >
+        {label}
+      </p>
+      <p className={`text-sm font-semibold truncate ${isDark ? "text-white/85" : "text-slate-800"}`} title={value}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -464,6 +621,9 @@ export default function App() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
+              {/* ── Repo Overview ── */}
+              <RepoOverviewCard report={report} theme={theme} />
+
               {/* ── Score Card ── */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
