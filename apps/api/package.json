@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test": "node --import tsx --test src/lib/*.test.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.13",
     "@shipcheck/shared": "*",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
