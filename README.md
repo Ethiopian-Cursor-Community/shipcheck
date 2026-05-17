@@ -10,6 +10,32 @@
 **Full working app:** `main` now includes SDK + backend + UI (merged from `integration`).  
 For extra team instructions, see [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
+**Repo:** https://github.com/Ethiopian-Cursor-Community/shipcheck
+
+---
+
+## Presentation & demo
+
+| Resource | Link |
+|----------|------|
+| **Pitch video** | [ShipCheck — Hackathon Pitch (Google Drive)](https://drive.google.com/file/d/1OKgpWn35GL92hTx9VYt2LknvSDfqRKfn/view?usp=sharing) |
+| **Slide deck (browser)** | Run `npm run dev` → open http://localhost:5173/pitch.html |
+| **Live app** | http://localhost:5173 |
+
+### Demo flow (for judges / audience)
+
+1. Show pitch slides (`/pitch.html`) — problem, solution, architecture, Cursor SDK, value  
+2. Open dashboard — paste a public GitHub URL → **Analyze**  
+3. Walk through: loading steps → verdict + score → repo overview → issues → fix plan  
+4. Optional second scan: `https://github.com/octocat/Hello-World` (shows lower readiness)  
+5. **Copy JSON** — show report can be shared with the team  
+
+Sample repos for live demo:
+
+- `https://github.com/sindresorhus/slugify`
+- `https://github.com/octocat/Hello-World`
+- `https://github.com/expressjs/express`
+
 ---
 
 ## Repo structure
