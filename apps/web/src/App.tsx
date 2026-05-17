@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { AuditReport, Verdict } from "@shipcheck/shared";
+import type { AuditIssue, AuditReport, Verdict } from "@shipcheck/shared";
 
 type ScanStep = "idle" | "validating" | "cloning" | "analyzing" | "done";
 type Theme = "dark" | "light";
@@ -105,7 +105,7 @@ function IssueCard({
   index,
   theme,
 }: {
-  item: any;
+  item: AuditIssue;
   index: number;
   theme: Theme;
 }) {
@@ -172,7 +172,7 @@ function ReportBlock({
   theme,
 }: {
   title: string;
-  items: any[];
+  items: AuditIssue[];
   variant: "high" | "low";
   theme: Theme;
 }) {
@@ -355,13 +355,26 @@ export default function App() {
   const [report, setReport] = useState<AuditReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>("dark");
+  const [copied, setCopied] = useState(false);
 
   const isScanning = step !== "idle" && step !== "done";
   const isDark = theme === "dark";
+  const normalizedRepoUrl = repoUrl.trim();
+  const isGithubRepoUrl = /^https?:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(
+    normalizedRepoUrl,
+  );
+  const showUrlHint = normalizedRepoUrl.length > 0 && !isGithubRepoUrl;
+  const canSubmit = !isScanning && isGithubRepoUrl;
 
   async function handleScan(e: React.FormEvent) {
     e.preventDefault();
+    if (!isGithubRepoUrl) {
+      setError("Please enter a valid GitHub repo URL: https://github.com/owner/repo");
+      return;
+    }
+
     setError(null);
+    setCopied(false);
     setReport(null);
 
     // Iterative loading — sequential steps with 700ms pauses
@@ -377,7 +390,7 @@ export default function App() {
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl }),
+        body: JSON.stringify({ repoUrl: normalizedRepoUrl }),
       });
 
       if (!res.ok) {
@@ -391,6 +404,17 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStep("idle");
+    }
+  }
+
+  async function handleCopyReport() {
+    if (!report) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not copy report JSON.");
     }
   }
 
@@ -534,7 +558,7 @@ export default function App() {
             />
             <button
               type="submit"
-              disabled={isScanning}
+              disabled={!canSubmit}
               className="
                 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-8 py-3.5 text-sm font-bold text-white
                 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed
@@ -544,6 +568,12 @@ export default function App() {
               {isScanning ? "Scanning…" : "Analyze"}
             </button>
           </motion.form>
+
+          {showUrlHint && (
+            <p className={`mt-2 text-xs ${isDark ? "text-red-300/90" : "text-red-600"}`}>
+              Use a public GitHub repo URL like `https://github.com/owner/repo`.
+            </p>
+          )}
 
           {/* Step progress indicator */}
           <AnimatePresence>
@@ -557,7 +587,14 @@ export default function App() {
               >
                 <div className="flex items-center gap-2">
                   {STEP_ORDER.map((s, i) => {
-                    const currentIdx = STEP_ORDER.indexOf(step as any);
+                    const currentIdx =
+                      step === "validating"
+                        ? 0
+                        : step === "cloning"
+                          ? 1
+                          : step === "analyzing"
+                            ? 2
+                            : -1;
                     const isPast = i < currentIdx;
                     const isCurrent = i === currentIdx;
                     return (
@@ -611,6 +648,46 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {!report && !isScanning && !error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`mx-auto mb-8 max-w-3xl rounded-3xl border p-5 md:p-6 ${
+              isDark
+                ? "border-white/10 bg-white/5"
+                : "border-orange-200/60 bg-white/70 shadow-sm"
+            }`}
+          >
+            <p className={`text-sm ${isDark ? "text-white/70" : "text-slate-600"}`}>
+              Paste a public GitHub URL and ShipCheck will clone it, analyze production
+              readiness, and return a clear report with verdict, risks, and fix plan.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                "https://github.com/octocat/Hello-World",
+                "https://github.com/sindresorhus/slugify",
+                "https://github.com/expressjs/express",
+              ].map((sample) => {
+                const label = sample.replace("https://github.com/", "");
+                return (
+                  <button
+                    key={sample}
+                    type="button"
+                    onClick={() => setRepoUrl(sample)}
+                    className={`rounded-full border px-3 py-1 text-xs ${
+                      isDark
+                        ? "border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+                        : "border-orange-200 bg-orange-50 text-slate-700 hover:bg-orange-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
         {/* ── Report ── */}
         <AnimatePresence>
           {report && (
@@ -621,6 +698,36 @@ export default function App() {
               transition={{ duration: 0.4 }}
               className="space-y-6"
             >
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyReport}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+                    isDark
+                      ? "border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+                      : "border-orange-200 bg-white text-slate-700 hover:bg-orange-50"
+                  }`}
+                >
+                  {copied ? "Copied JSON" : "Copy JSON"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReport(null);
+                    setError(null);
+                    setCopied(false);
+                    setStep("idle");
+                  }}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+                    isDark
+                      ? "border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+                      : "border-orange-200 bg-white text-slate-700 hover:bg-orange-50"
+                  }`}
+                >
+                  New Scan
+                </button>
+              </div>
+
               {/* ── Repo Overview ── */}
               <RepoOverviewCard report={report} theme={theme} />
 
