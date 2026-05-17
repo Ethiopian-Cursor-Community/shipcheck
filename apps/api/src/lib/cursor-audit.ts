@@ -1,17 +1,21 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
-import type { AuditReport } from "@shipcheck/shared";
+import type { AuditReport, RepoSummary, Verdict } from "@shipcheck/shared";
 import { z } from "zod";
+
+const optionalString = z
+  .string()
+  .nullish()
+  .transform((v) => {
+    const trimmed = v?.trim();
+    return trimmed ? trimmed : undefined;
+  });
 
 const auditIssueSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   severity: z.enum(["critical", "warning", "info"]),
   description: z.string().min(1),
-  file: z
-    .string()
-    .min(1)
-    .nullish()
-    .transform((v) => v ?? undefined),
+  file: optionalString,
 });
 
 const fixPlanStepSchema = z.object({
@@ -20,10 +24,25 @@ const fixPlanStepSchema = z.object({
   description: z.string().min(1),
 });
 
+const verdictSchema = z
+  .string()
+  .transform((v) => v.toLowerCase().trim())
+  .pipe(z.enum(["ready", "needs-work", "not-ready"]));
+
+const repoSummarySchema = z.object({
+  whatItDoes: z.string().min(1),
+  projectType: z.string().min(1),
+  primaryLanguage: z.string().min(1),
+  frameworks: z.array(z.string().min(1)).default([]),
+  keyFiles: z.array(z.string().min(1)).default([]),
+});
+
 const auditPayloadSchema = z.object({
   repoUrl: z.string().url().optional(),
   score: z.coerce.number().min(0).max(100).transform(Math.round),
+  verdict: verdictSchema.optional(),
   summary: z.string().min(1),
+  repo: repoSummarySchema.optional(),
   criticalIssues: z.array(auditIssueSchema).default([]),
   quickWins: z.array(auditIssueSchema).default([]),
   fixPlan: z.array(fixPlanStepSchema).default([]),
@@ -79,32 +98,50 @@ export async function runCursorAudit(
 
 export function buildAuditPrompt(repoUrl: string): string {
   return `
-You are auditing this GitHub repository for production readiness:
+You are ShipCheck, auditing this GitHub repository for production readiness:
 ${repoUrl}
 
 Inspect the repository in the current working directory. Do not edit files.
 
+Step 1 — Understand the repo
+- Read README and the most relevant top-level files.
+- List files at the project root and one level deep to understand structure.
+- Identify primary language, frameworks/runtimes, and project type
+  (web app, REST API, library, CLI tool, mobile app, infra, etc).
+- Pick up to 6 KEY FILES that best show what this project is.
+
+Step 2 — Audit for production readiness
 Check these areas:
 - security risks and exposed secrets
 - dependency and package health
 - environment variable handling
 - build, lint, and test setup
 - error handling and logging
-- deployment readiness
+- deployment readiness (Dockerfile/CI/IaC/health checks)
 - documentation needed before shipping
 
-Return ONLY valid JSON. No markdown, no commentary.
+Step 3 — Return ONE JSON object
+Use plain, business-friendly language non-engineers can understand.
+Return ONLY valid JSON. No markdown fences, no commentary, no preamble.
 
 JSON shape:
 {
   "score": 0,
-  "summary": "short production-readiness summary",
+  "verdict": "ready" | "needs-work" | "not-ready",
+  "summary": "2-3 sentences explaining how production-ready this repo is and why",
+  "repo": {
+    "whatItDoes": "1-2 plain sentences: what this project is and what it does",
+    "projectType": "Web app" /* or REST API, Library, CLI tool, Mobile app, etc */,
+    "primaryLanguage": "TypeScript",
+    "frameworks": ["React", "Express"],
+    "keyFiles": ["package.json", "src/index.ts", "Dockerfile"]
+  },
   "criticalIssues": [
     {
       "id": "short-kebab-case-id",
-      "title": "Issue title",
+      "title": "Short issue title",
       "severity": "critical",
-      "description": "What is wrong and why it matters",
+      "description": "What is wrong, why it matters in production, in plain English",
       "file": "optional/path.ts"
     }
   ],
@@ -121,16 +158,18 @@ JSON shape:
     {
       "order": 1,
       "title": "First fix",
-      "description": "Concrete implementation step"
+      "description": "Concrete, actionable implementation step"
     }
   ]
 }
 
 Rules:
-- score must be an integer from 0 to 100
+- score must be an integer 0-100
+- verdict reflects the score: >=75 ready, 40-74 needs-work, <40 not-ready
 - severity must be one of: critical, warning, info
-- include at most 5 criticalIssues, 5 quickWins, and 5 fixPlan steps
-- if the repo is tiny or incomplete, say that clearly in summary
+- at most 5 criticalIssues, 5 quickWins, 5 fixPlan steps
+- if the repo is tiny or incomplete, say so clearly in summary AND repo.whatItDoes
+- never include secrets/keys/tokens you may have read
 `.trim();
 }
 
@@ -145,7 +184,9 @@ export function parseCursorAuditOutput(output: string, repoUrl: string): AuditRe
       return {
         repoUrl,
         score: parsed.score,
+        verdict: parsed.verdict ?? deriveVerdict(parsed.score),
         summary: parsed.summary,
+        repo: parsed.repo ?? fallbackRepoSummary(),
         criticalIssues: parsed.criticalIssues,
         quickWins: parsed.quickWins,
         fixPlan: parsed.fixPlan.sort((a, b) => a.order - b.order),
@@ -157,6 +198,22 @@ export function parseCursorAuditOutput(output: string, repoUrl: string): AuditRe
   }
 
   throw new Error("Cursor audit did not return valid audit JSON.");
+}
+
+function deriveVerdict(score: number): Verdict {
+  if (score >= 75) return "ready";
+  if (score >= 40) return "needs-work";
+  return "not-ready";
+}
+
+function fallbackRepoSummary(): RepoSummary {
+  return {
+    whatItDoes: "Repository details could not be extracted automatically.",
+    projectType: "Unknown",
+    primaryLanguage: "Unknown",
+    frameworks: [],
+    keyFiles: [],
+  };
 }
 
 function getJsonCandidates(output: string): string[] {

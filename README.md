@@ -7,6 +7,8 @@
 3. Cursor Agent SDK scans the code  
 4. App shows a report: score, critical issues, quick wins, fix plan  
 
+**Full working app:** branch `integration` (SDK + backend + UI). Setup: [docs/INTEGRATION.md](docs/INTEGRATION.md).
+
 ---
 
 ## Repo structure
