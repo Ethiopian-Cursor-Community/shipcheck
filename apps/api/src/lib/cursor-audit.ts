@@ -7,7 +7,11 @@ const auditIssueSchema = z.object({
   title: z.string().min(1),
   severity: z.enum(["critical", "warning", "info"]),
   description: z.string().min(1),
-  file: z.string().min(1).optional(),
+  file: z
+    .string()
+    .min(1)
+    .nullish()
+    .transform((v) => v ?? undefined),
 });
 
 const fixPlanStepSchema = z.object({
@@ -53,7 +57,17 @@ export async function runCursorAudit(
       throw new Error(`Cursor audit failed with status: ${result.status}`);
     }
 
-    return parseCursorAuditOutput(result.result ?? "", repoUrl);
+    const rawOutput = result.result ?? "";
+    try {
+      return parseCursorAuditOutput(rawOutput, repoUrl);
+    } catch (parseErr) {
+      console.error(
+        "[cursor-audit] failed to parse agent output. Raw output below:\n---\n" +
+          rawOutput.slice(0, 4000) +
+          "\n---",
+      );
+      throw parseErr;
+    }
   } catch (error) {
     if (error instanceof CursorAgentError) {
       throw new Error(`Cursor SDK failed: ${error.message}`);
